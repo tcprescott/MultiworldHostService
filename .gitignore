@@ -1,5 +1,5 @@
 /env/
-/data/
+/data/*_multidata
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,0 +1,15 @@
+[Unit]
+Description=Berserker Multiworld Service
+After=multi-user.target
+
+[Service]
+User=alttprbot
+Group=alttprbot
+Type=idle
+WorkingDirectory=/opt/BerserkerHostService
+ExecStart=/opt/BerserkerHostService/env/bin/python BerserkerHostService.py
+EnvironmentFile=/opt/BerserkerHostService/.env
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

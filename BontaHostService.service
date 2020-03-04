@@ -6,9 +6,9 @@ After=multi-user.target
 User=alttprbot
 Group=alttprbot
 Type=idle
-WorkingDirectory=/opt/MultiworldHostService
-ExecStart=/opt/MultiworldHostService/env/bin/python MultiworldHostService.py
-EnvironmentFile=/opt/MultiworldHostService/.env
+WorkingDirectory=/opt/BontaHostService
+ExecStart=/opt/BontaHostService/env/bin/python BontaHostService.py
+EnvironmentFile=/opt/BontaHostService/.env
 TimeoutStopSec=5
 
 [Install]
