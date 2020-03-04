@@ -6,6 +6,7 @@ import json
 import logging
 import random
 import re
+import requests
 import shlex
 import socket
 import string
@@ -21,6 +22,7 @@ import MultiClient
 import MultiServer
 
 APP = Quart(__name__)
+MULTIWORLD_HOST = requests.get('https://checkip.amazonaws.com').text.strip()
 
 # TODO: Replace this with a SQLite database
 MULTIWORLDS = {}
@@ -32,10 +34,18 @@ async def create_game():
 
     data = await request.get_json()
 
+    if not data:
+        abort(400, description=f'Missing json body')
+
     if 'multidata_url' not in data:
         abort(400, description=f'Missing multidata_url in data')
 
     port = int(data.get('port', random.randint(30000, 35000)))
+
+    # Berserker's hint options
+    check_value = data['checkValue'] if 'checkValue' in data else 1
+    hint_cost = data['hintCost'] if 'hintCost' in data else 1000
+    allow_cheats = 'allowCheats' in data and int(data['allowCheats']) == 1
 
     if port < 30000 or port > 35000:
         abort(400, description=f'Port {port} is out of bounds.')
@@ -54,16 +64,12 @@ async def create_game():
 
     multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
 
-    # Berserker's hint options
-    check_value = data['checkValue'] if 'checkValue' in data else 1
-    hint_cost = data['hintCost'] if 'hintCost' in data else 1000
-    allow_cheats = 'allowCheats' in data and int(data['allowCheats']) == 1
-
     ctx = await create_multiserver(port, f"data/{token}_multidata", check_value, hint_cost, allow_cheats)
 
     MULTIWORLDS[token] = {
         'token': token,
         'server': ctx,
+        'host': MULTIWORLD_HOST,
         'port': port,
         'admin': data.get('admin', None),
         'date': datetime.datetime.now(),
@@ -78,7 +84,7 @@ async def create_game():
     return response
 
 
-@APP.route('/game/<string:token>}', methods=['POST'])
+@APP.route('/game/<string:token>', methods=['POST'])
 # TODO: Break out some functionality so there isn't a bunch of duplicated code
 async def resume_game(token):
     global MULTIWORLDS
@@ -106,10 +112,12 @@ async def resume_game(token):
     allow_cheats = 'allowCheats' in data and int(data['allowCheats']) == 1
 
     ctx = await create_multiserver(port, f"data/{token}_multidata", check_value, hint_cost, allow_cheats)
+    ctx.host = MULTIWORLD_HOST
 
     MULTIWORLDS[token] = {
         'token': token,
         'server': ctx,
+        'host': MULTIWORLD_HOST,
         'port': port,
         'admin': data.get('admin', None),
         'date': datetime.datetime.now(),
@@ -233,6 +241,7 @@ def multiworld_converter(o):
         return {
             'data_filename': o.data_filename,
             'save_filename': o.save_filename,
+            'host': o.host,
             'clients': {
                 'count': len(o.clients),
                 'connected': o.clients
