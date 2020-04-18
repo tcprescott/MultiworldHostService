@@ -180,13 +180,18 @@ def multiworld_converter(o):
             'send_index': o.send_index
         }
     if isinstance(o, MultiServer.Context):
+        received_items = []
+        print(o.player_names.keys())
+        for team in list(set(team for team, slot in o.player_names.keys())):
+            received_items.append({key[1]:len(value) for (key, value) in o.received_items.items() if key[0] == team})
         return {
             'data_filename': o.data_filename,
             'save_filename': o.save_filename,
             'clients': {
                 'count': len(o.clients),
                 'connected': o.clients
-            }
+            },
+            'received_items': received_items
         }
     if isinstance(o, tuple):
         return list([list(row) for row in o])
