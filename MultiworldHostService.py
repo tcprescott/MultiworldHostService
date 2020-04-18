@@ -5,12 +5,10 @@ import functools
 import json
 import logging
 import random
-import re
-import shlex
 import socket
 import string
-import urllib
 import zlib
+import aiohttp
 
 import aiofiles
 import websockets
@@ -50,19 +48,17 @@ async def create_game():
         async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
             binary = await multidata_file.read()
     else:
-        req = urllib.request.Request(
-            url=data['multidata_url'],
-            headers={'User-Agent': 'SahasrahBot Multiworld Service'}
-        )
         token = random_string(6)
-        binary = urllib.request.urlopen(req).read()
+
+        async with aiohttp.request(method='get', url=data['multidata_url'], headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
+            binary = await resp.read()
 
         async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
             await multidata_file.write(binary)
 
     multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
 
-    ctx = await create_multiserver(port, f"data/{token}_multidata")
+    ctx = await create_multiserver(port, f"data/{token}_multidata", racemode=data.get('racemode', False))
 
     MULTIWORLDS[token] = {
         'token': token,
@@ -84,7 +80,12 @@ async def create_game():
 async def get_all_games():
     global MULTIWORLDS
     response = APP.response_class(
-        response=json.dumps(MULTIWORLDS, default=multiworld_converter),
+        response=json.dumps(
+            {
+                'count': len(MULTIWORLDS),
+                'games': MULTIWORLDS
+            },
+            default=multiworld_converter),
         status=200,
         mimetype='application/json'
     )
@@ -116,7 +117,7 @@ async def update_game(token):
     if not 'msg' in data:
         abort(400)
 
-    resp = await console_message(MULTIWORLDS[token]['server'], data['msg'])
+    resp = MULTIWORLDS[token]['server'].commandprocessor(data['msg'])
     return jsonify(resp=resp, success=True)
 
 @APP.route('/game/<string:token>', methods=['DELETE'])
@@ -190,11 +191,15 @@ def multiworld_converter(o):
     if isinstance(o, asyncio.subprocess.Process):
         return o.pid
 
-async def create_multiserver(port, multidatafile):
+async def create_multiserver(port, multidatafile, racemode=False):
     args = argparse.Namespace(
         host='0.0.0.0',
         port=port,
         password=None,
+        location_check_points=1,
+        hint_cost=1000 if racemode else 0,
+        disable_item_cheat=racemode,
+        disable_client_forfeit=racemode,
         multidata=multidatafile,
         disable_save=False,
         loglevel="info"
@@ -202,7 +207,8 @@ async def create_multiserver(port, multidatafile):
 
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, args.loglevel.upper(), logging.INFO))
 
-    ctx = MultiServer.Context(args.host, args.port, args.password)
+    ctx = MultiServer.Context(args.host, args.port, args.password, args.location_check_points, args.hint_cost,
+                  not args.disable_item_cheat, not args.disable_client_forfeit)
 
     ctx.data_filename = args.multidata
 
@@ -219,78 +225,23 @@ async def create_multiserver(port, multidatafile):
         logging.error('Failed to read multiworld data (%s)' % e)
         return
 
-    logging.info('Hosting game at %s:%d (%s)' % (ctx.host, ctx.port, 'No password' if not ctx.password else 'Password: %s' % ctx.password))
-
     ctx.disable_save = args.disable_save
     if not ctx.disable_save:
         if not ctx.save_filename:
-            ctx.save_filename = (ctx.data_filename[:-9] if ctx.data_filename[-9:] == 'multidata' else (ctx.data_filename + '_')) + 'multisave'
+            ctx.save_filename = (ctx.data_filename[:-9] if ctx.data_filename[-9:] == 'multidata' else (
+                    ctx.data_filename + '_')) + 'multisave'
         try:
             with open(ctx.save_filename, 'rb') as f:
                 jsonobj = json.loads(zlib.decompress(f.read()).decode("utf-8"))
-                rom_names = jsonobj[0]
-                received_items = {tuple(k): [MultiClient.ReceivedItem(**i) for i in v] for k, v in jsonobj[1]}
-                if not all([ctx.rom_names[tuple(rom)] == (team, slot) for rom, (team, slot) in rom_names]):
-                    raise Exception('Save file mismatch, will start a new game')
-                ctx.received_items = received_items
-                logging.info('Loaded save file with %d received items for %d players' % (sum([len(p) for p in received_items.values()]), len(received_items)))
+                ctx.set_save(jsonobj)
         except FileNotFoundError:
             logging.error('No save data found, starting a new game')
         except Exception as e:
-            logging.info(e)
-
-    ctx.server = websockets.serve(functools.partial(MultiServer.server, ctx=ctx), ctx.host, ctx.port, ping_timeout=None, ping_interval=None)
+            logging.exception(e)
+    ctx.server = websockets.serve(functools.partial(MultiServer.server, ctx=ctx), ctx.host, ctx.port, ping_timeout=None,
+                                  ping_interval=None)
     await ctx.server
     return ctx
-
-# this is a modified version of MultiServer.console that can accept commands
-async def console_message(ctx: MultiServer.Context, message):
-    command = shlex.split(message)
-
-    # if command[0] == '/exit':
-    #     ctx.server.ws_server.close()
-    #     break
-
-    if command[0] == '/players':
-        return MultiServer.get_connected_players_string(ctx)
-    if command[0] == '/password':
-        MultiServer.set_password(ctx, command[1] if len(command) > 1 else None)
-    if command[0] == '/kick' and len(command) > 1:
-        team = int(command[2]) - 1 if len(command) > 2 and command[2].isdigit() else None
-        for client in ctx.clients:
-            if client.auth and client.name.lower() == command[1].lower() and (team is None or team == client.team):
-                if client.socket and not client.socket.closed:
-                    await client.socket.close()
-
-    if command[0] == '/forfeitslot' and len(command) > 1 and command[1].isdigit():
-        if len(command) > 2 and command[2].isdigit():
-            team = int(command[1]) - 1
-            slot = int(command[2])
-        else:
-            team = 0
-            slot = int(command[1])
-        MultiServer.forfeit_player(ctx, team, slot)
-    if command[0] == '/forfeitplayer' and len(command) > 1:
-        team = int(command[2]) - 1 if len(command) > 2 and command[2].isdigit() else None
-        for client in ctx.clients:
-            if client.auth and client.name.lower() == command[1].lower() and (team is None or team == client.team):
-                if client.socket and not client.socket.closed:
-                    MultiServer.forfeit_player(ctx, client.team, client.slot)
-    if command[0] == '/senditem' and len(command) > 2:
-        [(player, item)] = re.findall(r'\S* (\S*) (.*)', message)
-        if item in Items.item_table:
-            for client in ctx.clients:
-                if client.auth and client.name.lower() == player.lower():
-                    new_item = MultiClient.ReceivedItem(Items.item_table[item][3], "cheat console", client.slot)
-                    MultiServer.get_received_items(ctx, client.team, client.slot).append(new_item)
-                    MultiServer.notify_all(ctx, 'Cheat console: sending "' + item + '" to ' + client.name)
-            MultiServer.send_new_items(ctx)
-            return f"Item sent: {item}"
-        else:
-            return f"Unknown item: {item}"
-
-    if command[0][0] != '/':
-        MultiServer.notify_all(ctx, '[Server]: ' + message)
 
 if __name__ == '__main__':
     APP.run(host='127.0.0.1', port=5000, use_reloader=False)
