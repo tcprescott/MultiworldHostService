@@ -117,6 +117,10 @@ async def update_game(token):
     if not 'msg' in data:
         abort(400)
 
+    if data['msg'] == '/exit':
+        close_game(data['token'])
+        return jsonify(resp='Game closed.', success=True)
+
     resp = MULTIWORLDS[token]['server'].commandprocessor(data['msg'])
     return jsonify(resp=resp, success=True)
 
@@ -197,7 +201,7 @@ async def create_multiserver(port, multidatafile, racemode=False):
         port=port,
         password=None,
         location_check_points=1,
-        hint_cost=1000 if racemode else 0,
+        hint_cost=1000 if racemode else 25,
         disable_item_cheat=racemode,
         disable_client_forfeit=racemode,
         multidata=multidatafile,
