@@ -134,6 +134,19 @@ async def delete_game(token):
     close_game(token)
     return jsonify(success=True)
 
+@APP.route('/game/<string:token>/<int:slot>/<int:team>', methods=['DELETE'])
+async def kick_player(token, slot, team):
+    global MULTIWORLDS
+
+    if not token in MULTIWORLDS:
+        abort(404, description=f'Game with token {token} was not found.')
+
+    for client in MULTIWORLDS[token]['server'].clients:
+        if client.auth and client.team == team and client.slot == slot and not client.socket.closed:
+            await client.socket.close()
+
+    return jsonify(success=True)
+
 @APP.route('/jobs/cleanup/<int:minutes>', methods=['POST'])
 async def cleanup(minutes):
     global MULTIWORLDS
