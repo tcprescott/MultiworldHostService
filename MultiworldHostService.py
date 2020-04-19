@@ -13,6 +13,7 @@ import aiohttp
 import aiofiles
 import websockets
 from quart import Quart, abort, jsonify, request
+from typing import Callable
 
 import Items
 import MultiClient
@@ -20,9 +21,15 @@ import MultiServer
 
 # from config import Config as c
 
-APP = Quart(__name__)
+class MutiworldHostService(Quart):
+    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
+        await load_worlds()
+        await self.asgi_app(scope, receive, send)
+
 
 MULTIWORLDS = {}
+
+APP = MutiworldHostService(__name__)
 
 @APP.route('/game', methods=['POST'])
 async def create_game():
@@ -181,11 +188,13 @@ def multiworld_converter(o):
         return o.pid
 
 async def save_worlds():
+    global MULTIWORLDS
     async with aiofiles.open('data/saved_worlds.json', 'w') as save:
         await save.write(json.dumps(MULTIWORLDS, default=multiworld_converter))
         await save.flush()
 
 async def load_worlds():
+    global MULTIWORLDS
     try:
         async with aiofiles.open('data/saved_worlds.json', 'r') as save:
             saved_worlds = json.loads(await save.read())
@@ -194,6 +203,7 @@ async def load_worlds():
         print('saved_worlds.json not found, continuing...')
 
     for token in saved_worlds:
+        print(f"Restoring {token}")
         await init_multiserver(saved_worlds[token])
 
 async def init_multiserver(data):
@@ -205,9 +215,9 @@ async def init_multiserver(data):
     port = int(data.get('port', random.randint(30000, 35000)))
 
     if port < 30000 or port > 35000:
-        abort(400, description=f'Port {port} is out of bounds.')
+        raise Exception(f'Port {port} is out of bounds.')
     if is_port_in_use(port):
-        abort(400, description=f'Port {port} is in use!')
+        raise Exception(f'Port {port} is in use!')
 
     if 'token' in data:
         token = data['token']
@@ -297,6 +307,4 @@ async def create_multiserver(port, multidatafile, racemode=False):
     return ctx
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(load_worlds())
-    loop.run_until_complete(APP.run(host='127.0.0.1', port=5000, use_reloader=False))
+    APP.run(host='127.0.0.1', port=5000, use_reloader=False)
