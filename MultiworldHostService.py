@@ -21,15 +21,15 @@ import MultiServer
 
 # from config import Config as c
 
-class MutiworldHostService(Quart):
-    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
-        await load_worlds()
-        await self.asgi_app(scope, receive, send)
+# class MutiworldHostService(Quart):
+#     async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
+#         await load_worlds()
+#         await self.asgi_app(scope, receive, send)
 
 
 MULTIWORLDS = {}
 
-APP = MutiworldHostService(__name__)
+APP = Quart(__name__)
 
 @APP.route('/game', methods=['POST'])
 async def create_game():
@@ -193,6 +193,7 @@ async def save_worlds():
         await save.write(json.dumps(MULTIWORLDS, default=multiworld_converter))
         await save.flush()
 
+@APP.before_serving
 async def load_worlds():
     global MULTIWORLDS
     try:
