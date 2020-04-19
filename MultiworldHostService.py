@@ -65,7 +65,7 @@ async def get_game(token):
     return response
 
 @APP.route('/game/<string:token>/msg', methods=['PUT'])
-async def update_game(token):
+async def update_game_message(token):
     data = await request.get_json()
 
     global MULTIWORLDS
@@ -82,6 +82,25 @@ async def update_game(token):
 
     resp = MULTIWORLDS[token]['server'].commandprocessor(data['msg'])
     return jsonify(resp=resp, success=True)
+
+@APP.route('/game/<string:token>/<string:param>', methods=['PUT'])
+async def update_game_parameter(token, param):
+    data = await request.get_json()
+
+    global MULTIWORLDS
+
+    if not token in MULTIWORLDS:
+        abort(404, description=f'Game with token {token} was not found.')
+
+    if not 'value' in data:
+        abort(400)
+
+    if param in ['noexpiry', 'admin', 'meta', 'racemode']:
+        MULTIWORLDS[token][param] = data['value']
+        await save_worlds()
+        return jsonify(success=True)
+    else:
+        abort(400)
 
 @APP.route('/game/<string:token>', methods=['DELETE'])
 async def delete_game(token):
@@ -114,7 +133,7 @@ async def cleanup(minutes):
     global MULTIWORLDS
     tokens_to_clean = []
     for token in MULTIWORLDS:
-        if MULTIWORLDS[token]['date'] < datetime.datetime.now()-datetime.timedelta(minutes=minutes):
+        if MULTIWORLDS[token]['date'] < datetime.datetime.now()-datetime.timedelta(minutes=minutes) and not MULTIWORLDS[token].get('noexpiry', False):
             tokens_to_clean.append(token)
     for token in tokens_to_clean:
         close_game(token)
