@@ -13,18 +13,8 @@ import aiohttp
 import aiofiles
 import websockets
 from quart import Quart, abort, jsonify, request
-from typing import Callable
 
-import Items
-import MultiClient
 import MultiServer
-
-# from config import Config as c
-
-# class MutiworldHostService(Quart):
-#     async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
-#         await load_worlds()
-#         await self.asgi_app(scope, receive, send)
 
 
 MULTIWORLDS = {}
@@ -238,36 +228,57 @@ async def init_multiserver(data):
 
     multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
 
-    ctx = await create_multiserver(port, f"data/{token}_multidata", racemode=data.get('racemode', False))
+    ctx = await create_multiserver(
+        port,
+        f"data/{token}_multidata",
+        racemode=data.get('racemode', False),
+        server_options=multidata.get('server_options', None)
+    )
 
     MULTIWORLDS[token] = {
         'token': token,
         'server': ctx,
         'port': port,
         'racemode': data.get('racemode', False),
+        'noexpiry': data.get('noexpiry', False),
         'admin': data.get('admin', None),
         'date': datetime.datetime.now(),
         'meta': data.get('meta', None),
         'players': multidata['names'],
+        'server_options': multidata.get('server_options', None),
     }
 
     await save_worlds()
 
     return MULTIWORLDS[token]
 
-async def create_multiserver(port, multidatafile, racemode=False):
-    args = argparse.Namespace(
-        host='0.0.0.0',
-        port=port,
-        password=None,
-        location_check_points=1,
-        hint_cost=1000 if racemode else 25,
-        disable_item_cheat=racemode,
-        disable_client_forfeit=racemode,
-        multidata=multidatafile,
-        disable_save=False,
-        loglevel="info"
-    )
+async def create_multiserver(port, multidatafile, racemode=False, server_options=None):
+    if server_options is None:
+        args = argparse.Namespace(
+            host='0.0.0.0',
+            port=port,
+            password=None,
+            location_check_points=0 if racemode else 1,
+            hint_cost=10000 if racemode else 25,
+            disable_item_cheat=racemode,
+            disable_client_forfeit=racemode,
+            multidata=multidatafile,
+            disable_save=False,
+            loglevel="info"
+        )
+    else:
+        args = argparse.Namespace(
+            host='0.0.0.0',
+            port=port,
+            password=server_options.get('password', None),
+            location_check_points=0 if racemode else server_options.get('location_check_points', 1),
+            hint_cost=10000 if racemode else server_options.get('hint_cost', False),
+            disable_item_cheat=True if racemode else server_options.get('disable_item_cheat', False),
+            disable_client_forfeit=True if racemode else server_options.get('disable_client_forfeit', False),
+            multidata=multidatafile,
+            disable_save=False,
+            loglevel="info"
+        )
 
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, args.loglevel.upper(), logging.INFO))
 
