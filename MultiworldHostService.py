@@ -26,54 +26,16 @@ MULTIWORLDS = {}
 
 @APP.route('/game', methods=['POST'])
 async def create_game():
-    global MULTIWORLDS
-
     data = await request.get_json()
-    
-    if not 'multidata_url' in data and not 'token' in data:
-        abort(400, description=f'Missing multidata_url or token in data')
 
-    port = int(data.get('port', random.randint(30000, 35000)))
+    world = await init_multiserver(data)
 
-    if port < 30000 or port > 35000:
-        abort(400, description=f'Port {port} is out of bounds.')
-    if is_port_in_use(port):
-        abort(400, description=f'Port {port} is in use!')
-
-    if 'token' in data:
-        token = data['token']
-        if token in MULTIWORLDS:
-            abort(400, description=f'Game with token {token} already exists.')
-
-        async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
-            binary = await multidata_file.read()
-    else:
-        token = random_string(6)
-
-        async with aiohttp.request(method='get', url=data['multidata_url'], headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
-            binary = await resp.read()
-
-        async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
-            await multidata_file.write(binary)
-
-    multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
-
-    ctx = await create_multiserver(port, f"data/{token}_multidata", racemode=data.get('racemode', False))
-
-    MULTIWORLDS[token] = {
-        'token': token,
-        'server': ctx,
-        'port': port,
-        'admin': data.get('admin', None),
-        'date': datetime.datetime.now(),
-        'meta': data.get('meta', None),
-        'players': multidata['names'],
-    }
     response = APP.response_class(
-        response=json.dumps(MULTIWORLDS[token], default=multiworld_converter),
+        response=json.dumps(world, default=multiworld_converter),
         status=200,
         mimetype='application/json'
     )
+
     return response
 
 @APP.route('/game', methods=['GET'])
@@ -132,6 +94,9 @@ async def delete_game(token):
         abort(404, description=f'Game with token {token} was not found.')
 
     close_game(token)
+
+    await save_worlds()
+
     return jsonify(success=True)
 
 @APP.route('/game/<string:token>/<int:slot>/<int:team>', methods=['DELETE'])
@@ -156,6 +121,9 @@ async def cleanup(minutes):
             tokens_to_clean.append(token)
     for token in tokens_to_clean:
         close_game(token)
+
+    await save_worlds()
+
     return jsonify(success=True, count=len(tokens_to_clean), cleaned_tokens=tokens_to_clean)
 
 @APP.errorhandler(400)
@@ -212,6 +180,70 @@ def multiworld_converter(o):
     if isinstance(o, asyncio.subprocess.Process):
         return o.pid
 
+async def save_worlds():
+    async with aiofiles.open('data/saved_worlds.json', 'w') as save:
+        await save.write(json.dumps(MULTIWORLDS, default=multiworld_converter))
+        await save.flush()
+
+async def load_worlds():
+    try:
+        async with aiofiles.open('data/saved_worlds.json', 'r') as save:
+            saved_worlds = json.loads(await save.read())
+    except FileNotFoundError:
+        saved_worlds = []
+        print('saved_worlds.json not found, continuing...')
+
+    for token in saved_worlds:
+        await init_multiserver(saved_worlds[token])
+
+async def init_multiserver(data):
+    global MULTIWORLDS
+    
+    if not 'multidata_url' in data and not 'token' in data:
+        raise Exception(f'Missing multidata_url or token in data')
+
+    port = int(data.get('port', random.randint(30000, 35000)))
+
+    if port < 30000 or port > 35000:
+        abort(400, description=f'Port {port} is out of bounds.')
+    if is_port_in_use(port):
+        abort(400, description=f'Port {port} is in use!')
+
+    if 'token' in data:
+        token = data['token']
+        if token in MULTIWORLDS:
+            raise Exception(f'Game with token {token} already exists.')
+
+        async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
+            binary = await multidata_file.read()
+    else:
+        token = random_string(6)
+
+        async with aiohttp.request(method='get', url=data['multidata_url'], headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
+            binary = await resp.read()
+
+        async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
+            await multidata_file.write(binary)
+
+    multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
+
+    ctx = await create_multiserver(port, f"data/{token}_multidata", racemode=data.get('racemode', False))
+
+    MULTIWORLDS[token] = {
+        'token': token,
+        'server': ctx,
+        'port': port,
+        'racemode': data.get('racemode', False),
+        'admin': data.get('admin', None),
+        'date': datetime.datetime.now(),
+        'meta': data.get('meta', None),
+        'players': multidata['names'],
+    }
+
+    await save_worlds()
+
+    return MULTIWORLDS[token]
+
 async def create_multiserver(port, multidatafile, racemode=False):
     args = argparse.Namespace(
         host='0.0.0.0',
@@ -265,4 +297,6 @@ async def create_multiserver(port, multidatafile, racemode=False):
     return ctx
 
 if __name__ == '__main__':
-    APP.run(host='127.0.0.1', port=5000, use_reloader=False)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(load_worlds())
+    loop.run_until_complete(APP.run(host='127.0.0.1', port=5000, use_reloader=False))
