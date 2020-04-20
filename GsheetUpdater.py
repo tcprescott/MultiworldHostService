@@ -58,5 +58,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data = get_game_status(args.token)
-    print(data)
     update_gsheet(data, args.gsheet)
