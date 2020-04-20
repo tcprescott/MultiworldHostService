@@ -38,7 +38,7 @@ def update_gsheet(gsheetid):
                 [
                     slot+1,
                     player_name,
-                    False if connection is None else True,
+                    "" if connection is None else "✔️",
                     game['server']['received_items'][0].get(str(slot+1), 0),
                     game['server']['location_checks'][0].get(str(slot+1), 0),
                     game['server']['client_activity_timers'][0].get(str(slot+1), last_seen)
