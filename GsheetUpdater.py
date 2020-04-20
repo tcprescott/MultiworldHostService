@@ -11,35 +11,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_game_status(token):
-    data = []
-    resp = requests.get(
-        url=f'http://localhost:5000/game/{token}'
-    )
-    game = resp.json()
-    for slot, player_name in enumerate(game['players'][0]):
-        connection = next((item for item in game['server']['clients']['connected'] if item["slot"] == slot+1), None)
-        data.append(
-            [
-                slot+1,
-                player_name,
-                False if connection is None else True,
-                game['server']['received_items'][0].get(str(slot+1), 0),
-                game['server']['location_checks'][0].get(str(slot+1), 0),
-                game['server']['client_activity_timers'][0].get(str(slot+1), "")
-            ]
-        )
-    return data
 
 def update_gsheet(gsheetid):
     gc = gspread.authorize(get_creds())
     wb = gc.open_by_key(gsheetid)
     worksheet_list = wb.worksheets()
     for worksheet in worksheet_list:
+        data = []
         try:
-            data = get_game_status(worksheet.title)
+            resp = requests.get(
+                url=f'http://localhost:5000/game/{worksheet.title}'
+            )
         except Exception as e:
             continue
+        
+        last_seen_list = worksheet.col_values(6)
+
+        game = resp.json()
+        for slot, player_name in enumerate(game['players'][0]):
+            connection = next((item for item in game['server']['clients']['connected'] if item["slot"] == slot+1), None)
+            try:
+                last_seen = last_seen_list[slot+2]
+            except IndexError:
+                last_seen = ''
+            data.append(
+                [
+                    slot+1,
+                    player_name,
+                    False if connection is None else True,
+                    game['server']['received_items'][0].get(str(slot+1), 0),
+                    game['server']['location_checks'][0].get(str(slot+1), 0),
+                    game['server']['client_activity_timers'][0].get(str(slot+1), last_seen)
+                ]
+            )
         worksheet.batch_update(
             [
                 {
