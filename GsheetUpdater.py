@@ -31,7 +31,7 @@ def update_gsheet(gsheetid):
         for slot, player_name in enumerate(game['players'][0]):
             connection = next((item for item in game['server']['clients']['connected'] if item["slot"] == slot+1), None)
             try:
-                last_seen = last_seen_list[slot+2]
+                last_seen = last_seen_list[slot+1]
             except IndexError:
                 last_seen = ''
             data.append(
