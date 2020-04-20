@@ -10,3 +10,4 @@ upnpy>=1.1.5
 prompt_toolkit>=3.0.5
 requests>=2.23.0
 gspread>=3.4.2
+google-auth>=1.14.0
