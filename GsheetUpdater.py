@@ -30,18 +30,23 @@ def get_game_status(token):
         )
     return data
 
-def update_gsheet(data, gsheetid):
+def update_gsheet(gsheetid):
     gc = gspread.authorize(get_creds())
     wb = gc.open_by_key(gsheetid)
-    worksheet = wb.get_worksheet(0)
-    worksheet.batch_update(
-        [
-            {
-                'range': f'A2:E{len(data)+1}',
-                'values': data
-            }
-        ]
-    )
+    worksheet_list = wb.worksheets()
+    for worksheet in worksheet_list:
+        try:
+            data = get_game_status(worksheet.title)
+        except Exception as e:
+            continue
+        worksheet.batch_update(
+            [
+                {
+                    'range': f'A2:E{len(data)+1}',
+                    'values': data
+                }
+            ]
+        )
 
 def get_creds():
     return Credentials.from_service_account_info(
@@ -52,10 +57,8 @@ def get_creds():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("token")
     parser.add_argument("gsheet")
 
     args = parser.parse_args()
 
-    data = get_game_status(args.token)
-    update_gsheet(data, args.gsheet)
+    update_gsheet(args.gsheet)
