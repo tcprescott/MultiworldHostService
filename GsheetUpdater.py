@@ -26,6 +26,7 @@ def get_game_status(token):
                 False if connection is None else True,
                 game['server']['received_items'][0].get(str(slot+1), 0),
                 game['server']['location_checks'][0].get(str(slot+1), 0),
+                game['server']['client_activity_timers'][0].get(str(slot+1), "")
             ]
         )
     return data
@@ -42,7 +43,7 @@ def update_gsheet(gsheetid):
         worksheet.batch_update(
             [
                 {
-                    'range': f'A2:E{len(data)+1}',
+                    'range': f'A2:F{len(data)+1}',
                     'values': data
                 }
             ]
