@@ -180,6 +180,11 @@ def multiworld_converter(o):
         received_items = []
         for team in list(set(team for team, slot in o.player_names.keys())):
             received_items.append({key[1]:len(value) for (key, value) in o.received_items.items() if key[0] == team})
+
+        location_checks = []
+        for team in list(set(team for team, slot in o.player_names.keys())):
+            location_checks.append({key[1]:len(value) for (key, value) in o.location_checks.items() if key[0] == team})
+
         return {
             'data_filename': o.data_filename,
             'save_filename': o.save_filename,
@@ -187,7 +192,8 @@ def multiworld_converter(o):
                 'count': len(o.clients),
                 'connected': o.clients
             },
-            'received_items': received_items
+            'received_items': received_items,
+            'location_checks': location_checks,
         }
     if isinstance(o, tuple):
         return list([list(row) for row in o])
