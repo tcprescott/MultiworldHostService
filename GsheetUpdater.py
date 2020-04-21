@@ -53,8 +53,9 @@ def update_gsheet(gsheetid):
                 {
                     'range': f'A2:F{len(data)+1}',
                     'values': data
-                }
-            ]
+                },
+            ],
+            value_input_option='USER_ENTERED'
         )
 
 def get_creds():
