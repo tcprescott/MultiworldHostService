@@ -5,6 +5,7 @@ import json
 import os
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
 
 import requests
 from dotenv import load_dotenv
@@ -31,6 +32,8 @@ def update_gsheet(gsheetid):
         for slot, player_name in enumerate(game['players'][0]):
             connection = next((item for item in game['server']['clients']['connected'] if item["slot"] == slot+1), None)
             try:
+                last_seen = game['server']['client_activity_timers'][0].get(datetime.datetime.fromisoformat(str(slot+1)), datetime.datetime.fromisoformat(last_seen_list[slot+1])).strftime('%Y/%m/%d %H:%M:%S')
+            except ValueError:
                 last_seen = last_seen_list[slot+1]
             except IndexError:
                 last_seen = ''
@@ -41,7 +44,7 @@ def update_gsheet(gsheetid):
                     "" if connection is None else "✔️",
                     game['server']['received_items'][0].get(str(slot+1), 0),
                     game['server']['location_checks'][0].get(str(slot+1), 0),
-                    game['server']['client_activity_timers'][0].get(str(slot+1), last_seen)
+                    last_seen
                 ]
             )
         worksheet.batch_update(
