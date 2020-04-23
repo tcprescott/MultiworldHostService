@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import concurrent.futures
 import datetime
 import functools
 import json
@@ -8,14 +9,14 @@ import random
 import socket
 import string
 import zlib
-import aiohttp
 
 import aiofiles
+import aiohttp
 import websockets
 from quart import Quart, abort, jsonify, request
 
+import Items
 import MultiServer
-
 
 MULTIWORLDS = {}
 
@@ -28,7 +29,7 @@ async def create_game():
     world = await init_multiserver(data)
 
     response = APP.response_class(
-        response=json.dumps(world, default=multiworld_converter),
+        response=json.dumps(world, default=simple_multiworld_converter),
         status=200,
         mimetype='application/json'
     )
@@ -44,7 +45,7 @@ async def get_all_games():
                 'count': len(MULTIWORLDS),
                 'games': MULTIWORLDS
             },
-            default=multiworld_converter),
+            default=simple_multiworld_converter),
         status=200,
         mimetype='application/json'
     )
@@ -57,12 +58,27 @@ async def get_game(token):
     if not token in MULTIWORLDS:
         abort(404, description=f'Game with token {token} was not found.')
 
-    response = APP.response_class(
-        response=json.dumps(MULTIWORLDS[token], default=multiworld_converter),
-        status=200,
-        mimetype='application/json'
-    )
+    if request.args.get('simple', 'true') == 'true':
+        response = APP.response_class(
+            response=json.dumps(MULTIWORLDS[token], default=simple_multiworld_converter),
+            status=200,
+            mimetype='application/json'
+        )
+    else:
+        loop = asyncio.get_running_loop()
+        with concurrent.futures.ProcessPoolExecutor() as pool:
+            serialized = await loop.run_in_executor(pool, dump_game_full, token)
+        response = APP.response_class(
+            response=serialized,
+            status=200,
+            mimetype='application/json'
+        )
+
+
     return response
+
+def dump_game_full(token):
+    return json.dumps(MULTIWORLDS[token], default=multiworld_converter)
 
 @APP.route('/game/<string:token>/msg', methods=['PUT'])
 async def update_game_message(token):
@@ -177,10 +193,6 @@ def multiworld_converter(o):
             'send_index': o.send_index
         }
     if isinstance(o, MultiServer.Context):
-        received_items = []
-        for team in list(set(team for team, slot in o.player_names.keys())):
-            received_items.append({key[1]:len(value) for (key, value) in o.received_items.items() if key[0] == team})
-
         location_checks = []
         for team in list(set(team for team, slot in o.player_names.keys())):
             location_checks.append({key[1]:len(value) for (key, value) in o.location_checks.items() if key[0] == team})
@@ -189,6 +201,15 @@ def multiworld_converter(o):
         for team in list(set(team for team, slot in o.player_names.keys())):
             client_activity_timers.append({key[1]:value for (key, value) in o.client_activity_timers.items() if key[0] == team})
 
+        # omg this is a mess
+        inventory = []
+        for t in list(set(team for team, slot in o.player_names.keys())):
+            for team, slot in o.player_names.keys():
+                if team == t:
+                    inventory.append(
+                        {slot: [Items.lookup_id_to_name.get(item[0], f'Unknown item (ID:{item[0]})') for location, item in o.locations.items() if location[1] == item[1] and item[1] == slot and location[0] in o.location_checks[team, slot]] + [Items.lookup_id_to_name.get(ri.item, f'Unknown item (ID:{ri.item})') for ri in o.received_items[team, slot]]}
+                    )
+
         return {
             'data_filename': o.data_filename,
             'save_filename': o.save_filename,
@@ -196,30 +217,26 @@ def multiworld_converter(o):
                 'count': len(o.clients),
                 'connected': o.clients
             },
-            'received_items': received_items,
             'location_checks': location_checks,
+            'inventory': inventory,
             'client_activity_timers': client_activity_timers,
         }
-    if isinstance(o, tuple):
-        return list([list(row) for row in o])
     if isinstance(o, datetime.datetime):
         return o.__str__()
-    if isinstance(o, asyncio.subprocess.Process):
-        return o.pid
+
+def simple_multiworld_converter(o):
+    if isinstance(o, MultiServer.Client):
+        return None
+    if isinstance(o, MultiServer.Context):
+        return None
+    if isinstance(o, datetime.datetime):
+        return o.__str__()
 
 async def save_worlds():
     global MULTIWORLDS
 
-    # strip specific keys we don't want
-    games_to_save = {}
-    for game in MULTIWORLDS:
-        games_to_save[game] = {}
-        for (key, value) in MULTIWORLDS[game].items():
-            if not key in ['server']:
-                games_to_save[game][key] = value
-
     async with aiofiles.open('data/saved_worlds.json', 'w') as save:
-        await save.write(json.dumps(games_to_save, default=multiworld_converter))
+        await save.write(json.dumps(MULTIWORLDS, default=simple_multiworld_converter))
         await save.flush()
 
 @APP.before_serving

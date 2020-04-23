@@ -21,7 +21,7 @@ def update_gsheet(gsheetid):
         data = []
         try:
             resp = requests.get(
-                url=f'http://localhost:5000/game/{worksheet.title}'
+                url=f'http://localhost:5000/game/{worksheet.title}?simple=false'
             )
         except Exception as e:
             continue
@@ -43,7 +43,7 @@ def update_gsheet(gsheetid):
                     slot+1,
                     player_name,
                     "" if connection is None else "✔️",
-                    game['server']['received_items'][0].get(str(slot+1), 0),
+                    "",
                     game['server']['location_checks'][0].get(str(slot+1), 0),
                     last_seen
                 ]
