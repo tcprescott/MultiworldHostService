@@ -209,8 +209,17 @@ def multiworld_converter(o):
 
 async def save_worlds():
     global MULTIWORLDS
+
+    # strip specific keys we don't want
+    games_to_save = {}
+    for game in MULTIWORLDS:
+        games_to_save[game] = {}
+        for (key, value) in MULTIWORLDS[game].items():
+            if not key in ['server']:
+                games_to_save[game][key] = value
+
     async with aiofiles.open('data/saved_worlds.json', 'w') as save:
-        await save.write(json.dumps(MULTIWORLDS, default=multiworld_converter))
+        await save.write(json.dumps(games_to_save, default=multiworld_converter))
         await save.flush()
 
 @APP.before_serving
@@ -256,6 +265,11 @@ async def init_multiserver(data):
         async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
             await multidata_file.write(binary)
 
+    if 'date' in data:
+        server_date = datetime.datetime.fromisoformat(data['date'])
+    else:
+        server_date = datetime.datetime.now()
+
     multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
 
     ctx = await create_multiserver(
@@ -272,7 +286,7 @@ async def init_multiserver(data):
         'racemode': data.get('racemode', False),
         'noexpiry': data.get('noexpiry', False),
         'admin': data.get('admin', None),
-        'date': datetime.datetime.now(),
+        'date': server_date,
         'meta': data.get('meta', None),
         'players': multidata['names'],
         'server_options': multidata.get('server_options', None),
