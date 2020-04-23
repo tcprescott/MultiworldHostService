@@ -204,11 +204,11 @@ def multiworld_converter(o):
         # omg this is a mess
         inventory = []
         for t in list(set(team for team, slot in o.player_names.keys())):
+            team_inventory = {}
             for team, slot in o.player_names.keys():
                 if team == t:
-                    inventory.append(
-                        {slot: [Items.lookup_id_to_name.get(item[0], f'Unknown item (ID:{item[0]})') for location, item in o.locations.items() if location[1] == item[1] and item[1] == slot and location[0] in o.location_checks[team, slot]] + [Items.lookup_id_to_name.get(ri.item, f'Unknown item (ID:{ri.item})') for ri in o.received_items[team, slot]]}
-                    )
+                    team_inventory[slot] = [Items.lookup_id_to_name.get(item[0], f'Unknown item (ID:{item[0]})') for location, item in o.locations.items() if location[1] == item[1] and item[1] == slot and location[0] in o.location_checks[team, slot]] + [Items.lookup_id_to_name.get(ri.item, f'Unknown item (ID:{ri.item})') for ri in o.received_items[team, slot]]
+            inventory.append(team_inventory)
 
         return {
             'data_filename': o.data_filename,

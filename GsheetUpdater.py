@@ -1,14 +1,14 @@
 #!env/bin/python
 
 import argparse
+import datetime
 import json
 import os
-import gspread
-from google.oauth2.service_account import Credentials
-import datetime
 
+import gspread
 import requests
 from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
 
 load_dotenv()
 
@@ -43,20 +43,46 @@ def update_gsheet(gsheetid):
                     slot+1,
                     player_name,
                     "" if connection is None else "✔️",
-                    "",
+                    len(game['server']['inventory'][0].get(str(slot+1), [])),
                     game['server']['location_checks'][0].get(str(slot+1), 0),
-                    last_seen
+                    last_seen,
+                    count_inv_items('Bombos', slot, game),
+                    count_inv_items('Book of Mudora', slot, game),
+                    count_inv_items('Bottle', slot, game) + count_inv_items('Bottle (Red Potion)', slot, game) + count_inv_items('Bottle (Green Potion)', slot, game) + count_inv_items('Bottle (Blue Potion)',  slot, game) + count_inv_items('Bottle (Fairy)',  slot,game) + count_inv_items('Bottle (Bee)',  slot,game) + count_inv_items('Bottle (Good Bee)',  slot,game),
+                    count_inv_items('Cane of Somaria', slot, game),
+                    count_inv_items('Cape', slot, game),
+                    count_inv_items('Ether', slot, game),
+                    count_inv_items('Fire Rod', slot, game),
+                    count_inv_items('Flippers', slot, game),
+                    count_inv_items('Flute', slot, game),
+                    count_inv_items('Hammer', slot, game),
+                    count_inv_items('Hookshot', slot, game),
+                    count_inv_items('Ice Rod', slot, game),
+                    count_inv_items('Lamp', slot, game),
+                    count_inv_items('Magic Mirror', slot, game),
+                    count_inv_items('Magic Powder', slot, game),
+                    count_inv_items('Moon Pearl', slot, game),
+                    count_inv_items('Mushroom', slot, game),
+                    count_inv_items('Pegasus Boots', slot, game),
+                    count_inv_items('Progressive Bow', slot, game) + count_inv_items('Progressive Bow (Alt)', slot, game),
+                    count_inv_items('Progressive Glove', slot, game),
+                    count_inv_items('Progressive Sword', slot, game),
+                    count_inv_items('Quake', slot, game),
+                    count_inv_items('Shovel', slot, game),
                 ]
             )
         worksheet.batch_update(
             [
                 {
-                    'range': f'A2:F{len(data)+1}',
+                    'range': f'A2:AC{len(data)+1}',
                     'values': data
                 },
             ],
             value_input_option='USER_ENTERED'
         )
+
+def count_inv_items(item, slot, game):
+    return game['server']['inventory'][0].get(str(slot+1), 'None').count(item)
 
 def get_creds():
     return Credentials.from_service_account_info(
