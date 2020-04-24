@@ -58,3 +58,4 @@ env/
 input/
 /config.py
 .env
+test_data/
