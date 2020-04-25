@@ -351,7 +351,7 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
 
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, args.loglevel.upper(), logging.INFO))
 
-    ctx = Context(args.host, args.port, args.password, args.location_check_points, args.hint_cost,
+    ctx = MultiServer.Context(args.host, args.port, args.password, args.location_check_points, args.hint_cost,
                   not args.disable_item_cheat, args.forfeit_mode, args.remaining_mode)
 
     ctx.data_filename = args.multidata
