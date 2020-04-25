@@ -97,8 +97,11 @@ def update_gsheet(gsheetid):
         for slot, player_name in enumerate(game['players'][0]):
             connection = next((item for item in game['server']['clients']['connected'] if item["slot"] == slot+1), None)
             try:
-                last_datetime = game['server']['client_activity_timers'][0].get(str(slot+1), last_seen_list[slot+1])
-                last_seen = datetime.datetime.fromisoformat(last_datetime).strftime('%Y/%m/%d %H:%M:%S')
+                try:
+                    last_datetime = game['server']['client_activity_timers'][0][str(slot+1)]
+                    last_seen = datetime.datetime.fromisoformat(last_datetime).strftime('%Y/%m/%d %H:%M:%S')
+                except KeyError:
+                    last_seen = last_seen_list[slot+1]
             except ValueError:
                 last_seen = last_seen_list[slot+1]
             except IndexError:
