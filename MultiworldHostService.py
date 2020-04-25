@@ -328,7 +328,8 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
             location_check_points=0 if racemode else 1,
             hint_cost=10000 if racemode else 25,
             disable_item_cheat=racemode,
-            disable_client_forfeit=racemode,
+            forfeit_mode="disabled" if racemode else "enabled",
+            remaining_mode="disabled" if racemode else "goal",
             multidata=multidatafile,
             disable_save=False,
             loglevel="info"
@@ -341,7 +342,8 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
             location_check_points=0 if racemode else server_options.get('location_check_points', 1),
             hint_cost=10000 if racemode else server_options.get('hint_cost', False),
             disable_item_cheat=True if racemode else server_options.get('disable_item_cheat', False),
-            disable_client_forfeit=True if racemode else server_options.get('disable_client_forfeit', False),
+            forfeit_mode="disabled" if racemode else server_options.get('forfeit_mode', "enabled"),
+            remaining_mode="disabled" if racemode else server_options.get('remaining_mode', "goal"),
             multidata=multidatafile,
             disable_save=False,
             loglevel="info"
@@ -349,8 +351,8 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
 
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, args.loglevel.upper(), logging.INFO))
 
-    ctx = MultiServer.Context(args.host, args.port, args.password, args.location_check_points, args.hint_cost,
-                  not args.disable_item_cheat, not args.disable_client_forfeit)
+    ctx = Context(args.host, args.port, args.password, args.location_check_points, args.hint_cost,
+                  not args.disable_item_cheat, args.forfeit_mode, args.remaining_mode)
 
     ctx.data_filename = args.multidata
 
