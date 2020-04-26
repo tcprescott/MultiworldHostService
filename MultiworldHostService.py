@@ -20,6 +20,15 @@ import MultiServer
 
 MULTIWORLDS = {}
 
+MAJOR_ITEM_IDS = [0x0B, 0x64, 0x65, 0x1D, 0x09, 0x0A, 0x1A, 0x14,
+                  0x4B, 0x1B, 0x19, 0x29, 0x13, 0x12, 0x0D, 0x1F,
+                  0x15, 0x07, 0x1E, 0x08, 0x1C, 0x0F, 0x10, 0x11,
+                  0x16, 0x2B, 0x2C, 0x2D, 0x3D, 0x3C, 0x48, 0x50,
+                  0x02, 0x49, 0x03, 0x5E, 0x61, 0x58, 0x6C, 0x6A,
+                  0x9D, 0xA3, 0x9C, 0xAA, 0x95, 0xA0, 0xA4, 0xA6,
+                  0x99, 0xAB, 0x94, 0x97, 0xA5, 0x9A, 0xA9, 0x96,
+                  0xA7, 0x98, 0x93, 0x92]
+
 APP = Quart(__name__)
 
 @APP.route('/game', methods=['POST'])
@@ -197,27 +206,39 @@ def multiworld_converter(o):
         }
     if isinstance(o, MultiServer.Context):
         location_checks = []
-        for team in list(set(team for team, slot in o.player_names.keys())):
-            location_checks.append({key[1]:len(value) for (key, value) in o.location_checks.items() if key[0] == team})
-
         client_activity_timers = []
-        for team in list(set(team for team, slot in o.player_names.keys())):
-            client_activity_timers.append({key[1]:value for (key, value) in o.client_activity_timers.items() if key[0] == team})
-
-        # omg this is a mess
+        remaining_major_items = []
         inventory = []
-        for t in list(set(team for team, slot in o.player_names.keys())):
+
+        for team in list(set(team for team, slot in o.player_names.keys())):
+            team_location_checks = [i for i in o.location_checks.items() if i[0] == team]
+            team_client_activity_timers = [i for i in o.client_activity_timers.items() if i[0] == team]
+
+            team_majors = {}
             team_inventory = {}
-            for team, slot in o.player_names.keys():
-                if team == t:
-                    player_inv = []
-                    player_inv += [Items.lookup_id_to_name.get(item[0], f'Unknown item (ID:{item[0]})') for location, item in o.locations.items() if location[1] == item[1] and item[1] == slot and location[0] in o.location_checks[team, slot]]
-                    try:
-                        player_inv += [Items.lookup_id_to_name.get(ri.item, f'Unknown item (ID:{ri.item})') for ri in o.received_items[team, slot]]
-                    except KeyError:
-                        pass
-                    team_inventory[slot] = player_inv
+
+            slots = [s for (t, s) in o.player_names.keys() if t == team]
+
+            for slot in slots:
+                
+                team_majors[slot] = len([item[0] for location, item in o.locations.items()
+                    if location[1] == slot and
+                    location[1] != item[1] and
+                    item[0] in MAJOR_ITEM_IDS and
+                    not location[0] in o.location_checks[team, slot]])
+            
+                player_inv = []
+                player_inv += [Items.lookup_id_to_name.get(item[0], f'Unknown item (ID:{item[0]})') for location, item in o.locations.items() if location[1] == item[1] and item[1] == slot and location[0] in o.location_checks[team, slot]]
+                try:
+                    player_inv += [Items.lookup_id_to_name.get(ri.item, f'Unknown item (ID:{ri.item})') for ri in o.received_items[team, slot]]
+                except KeyError:
+                    pass
+                team_inventory[slot] = player_inv
+
+            location_checks.append({key[1]:len(value) for (key, value) in team_location_checks})
+            client_activity_timers.append({key[1]:value for (key, value) in team_client_activity_timers})
             inventory.append(team_inventory)
+            remaining_major_items.append(team_majors)
 
         return {
             'data_filename': o.data_filename,
@@ -229,6 +250,7 @@ def multiworld_converter(o):
             'location_checks': location_checks,
             'inventory': inventory,
             'client_activity_timers': client_activity_timers,
+            'remaining_major_items': remaining_major_items
         }
     if isinstance(o, datetime.datetime):
         return o.__str__()
