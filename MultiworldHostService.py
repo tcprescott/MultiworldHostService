@@ -211,9 +211,6 @@ def multiworld_converter(o):
         inventory = []
 
         for team in list(set(team for team, slot in o.player_names.keys())):
-            team_location_checks = [i for i in o.location_checks.items() if i[0] == team]
-            team_client_activity_timers = [i for i in o.client_activity_timers.items() if i[0] == team]
-
             team_majors = {}
             team_inventory = {}
 
@@ -235,8 +232,8 @@ def multiworld_converter(o):
                     pass
                 team_inventory[slot] = player_inv
 
-            location_checks.append({key[1]:len(value) for (key, value) in team_location_checks})
-            client_activity_timers.append({key[1]:value for (key, value) in team_client_activity_timers})
+            location_checks.append({key[1]:len(value) for (key, value) in o.location_checks.items() if key[0] == team})
+            client_activity_timers.append({key[1]:value for (key, value) in o.client_activity_timers.items() if key[0] == team})
             inventory.append(team_inventory)
             remaining_major_items.append(team_majors)
 

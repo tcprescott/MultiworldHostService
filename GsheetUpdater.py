@@ -77,6 +77,7 @@ def update_gsheet(gsheetid):
             "connected",
             "inventory",
             "checks",
+            "remaining major items",
             "last_seen",
         ] + ITEMS_TO_LIST)
         try:
@@ -91,7 +92,7 @@ def update_gsheet(gsheetid):
         except Exception as e:
             continue
         
-        last_seen_list = worksheet.col_values(6)
+        last_seen_list = worksheet.col_values(7)
 
 
         for slot, player_name in enumerate(game['players'][0]):
@@ -113,6 +114,7 @@ def update_gsheet(gsheetid):
                     "" if connection is None else "✔️",
                     len(game['server']['inventory'][0].get(str(slot+1), [])),
                     game['server']['location_checks'][0].get(str(slot+1), 0),
+                    game['server']['remaining_major_items'][0].get(str(slot+1), 0),
                     last_seen
                 ] + inventory_list(slot, game)
             )
