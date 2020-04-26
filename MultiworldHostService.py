@@ -190,7 +190,10 @@ def multiworld_converter(o):
             'name': o.name,
             'team': o.team,
             'slot': o.slot,
-            'send_index': o.send_index
+            'send_index': o.send_index,
+            'ip_address': o.socket.remote_address[0],
+            'tags': o.tags,
+            'version': o.version,
         }
     if isinstance(o, MultiServer.Context):
         location_checks = []
@@ -299,7 +302,8 @@ async def init_multiserver(data):
         port,
         f"data/{token}_multidata",
         racemode=data.get('racemode', False),
-        server_options=multidata.get('server_options', None)
+        server_options=multidata.get('server_options', None),
+        token=token
     )
 
     MULTIWORLDS[token] = {
@@ -319,7 +323,7 @@ async def init_multiserver(data):
 
     return MULTIWORLDS[token]
 
-async def create_multiserver(port, multidatafile, racemode=False, server_options=None):
+async def create_multiserver(port, multidatafile, racemode=False, server_options=None, token=None):
     if server_options is None:
         args = argparse.Namespace(
             host='0.0.0.0',
