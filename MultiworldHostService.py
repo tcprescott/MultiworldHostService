@@ -106,7 +106,11 @@ async def update_game_message(token):
         return jsonify(resp='Game closed.', success=True)
 
     resp = MULTIWORLDS[token]['server'].commandprocessor(data['msg'])
-    return jsonify(resp=resp, success=True)
+
+    if resp:
+        return jsonify(resp="Message sent and ran successfully.", success=True)
+    else:
+        return jsonify(error="Command failed.", success=False)
 
 @APP.route('/game/<string:token>/<string:param>', methods=['PUT'])
 async def update_game_parameter(token, param):
