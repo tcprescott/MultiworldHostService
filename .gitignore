@@ -1,5 +1,6 @@
 /env/
-/data/
+/data*/
+.env
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -56,3 +57,5 @@ env/
 .vscode/
 input/
 /config.py
+.env
+test_data/
