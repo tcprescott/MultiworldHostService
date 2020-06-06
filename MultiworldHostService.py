@@ -152,7 +152,7 @@ async def kick_player(token, slot, team):
     if not token in MULTIWORLDS:
         abort(404, description=f'Game with token {token} was not found.')
 
-    for client in MULTIWORLDS[token]['server'].clients:
+    for client in MULTIWORLDS[token]['server'].endpoints:
         if client.auth and client.team == team and client.slot == slot and not client.socket.closed:
             await client.socket.close()
 
@@ -246,8 +246,8 @@ def multiworld_converter(o):
             'data_filename': o.data_filename,
             'save_filename': o.save_filename,
             'clients': {
-                'count': len(o.clients),
-                'connected': o.clients
+                'count': len(o.endpoints),
+                'connected': o.endpoints
             },
             'location_checks': location_checks,
             'inventory': inventory,
@@ -393,6 +393,9 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
             ctx.rom_names = {tuple(rom): (team, slot) for slot, team, rom in jsonobj['roms']}
             ctx.remote_items = set(jsonobj['remote_items'])
             ctx.locations = {tuple(k): tuple(v) for k, v in jsonobj['locations']}
+            if "er_hint_data" in jsonobj:
+                ctx.er_hint_data = {int(player): {int(address): name for address, name in loc_data.items()}
+                                    for player, loc_data in jsonobj["er_hint_data"].items()}
     except Exception as e:
         logging.error('Failed to read multiworld data (%s)' % e)
         return
@@ -410,6 +413,7 @@ async def create_multiserver(port, multidatafile, racemode=False, server_options
             logging.error('No save data found, starting a new game')
         except Exception as e:
             logging.exception(e)
+
     ctx.server = websockets.serve(functools.partial(MultiServer.server, ctx=ctx), ctx.host, ctx.port, ping_timeout=None,
                                   ping_interval=None)
     await ctx.server
