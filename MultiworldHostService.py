@@ -77,7 +77,7 @@ async def update_game_message(token):
         close_game(data['token'])
         return jsonify(resp='Game closed.', success=True)
 
-    resp = server_command_processor(MULTIWORLDS[token]['server'].ctx)
+    resp = server_command_processor(MULTIWORLDS[token]['server'])
 
     if resp:
         return jsonify(resp="Message sent and ran successfully.", success=True)
