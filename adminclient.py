@@ -1,8 +1,7 @@
-#!env/bin/python
+#!.venv/bin/python
 
 import argparse
 import requests
-import json
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -22,7 +21,7 @@ if __name__ == "__main__":
     parser_msg.add_argument("msg")
 
     args = parser.parse_args()
-    
+
     if args.command == 'update':
         if args.value == 'true':
             value = True
@@ -34,21 +33,24 @@ if __name__ == "__main__":
         except ValueError:
             pass
         resp = requests.put(
-            url=f'http://localhost:5000/game/{args.token}/{args.parameter}',
+            url=f'http://localhost:5002/game/{args.token}/{args.parameter}',
             json={
                 'value': value
-            }
+            },
+            timeout=30,
         )
     elif args.command == 'close':
         resp = requests.delete(
-            url=f'http://localhost:5000/game/{args.token}'
+            url=f'http://localhost:5002/game/{args.token}',
+            timeout=30,
         )
     elif args.command == 'msg':
         resp = requests.put(
-            url=f'http://localhost:5000/game/{args.token}/msg',
+            url=f'http://localhost:5002/game/{args.token}/msg',
             json={
                 'msg': args.msg
-            }
+            },
+            timeout=30,
         )
 
     print(resp.json())
