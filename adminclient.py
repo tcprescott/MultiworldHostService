@@ -16,12 +16,12 @@ if __name__ == "__main__":
     parser_close = subparsers.add_parser('close')
     parser_close.add_argument("token")
 
-    parser_msg = subparsers.add_parser('msg')
+    parser_msg = subparsers.add_parser('msg')f
     parser_msg.add_argument("token")
     parser_msg.add_argument("msg")
 
     args = parser.parse_args()
-    
+
     if args.command == 'update':
         if args.value == 'true':
             value = True
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         except ValueError:
             pass
         resp = requests.put(
-            url=f'http://localhost:5000/game/{args.token}/{args.parameter}',
+            url=f'http://localhost:5002/game/{args.token}/{args.parameter}',
             json={
                 'value': value
             },
@@ -41,12 +41,12 @@ if __name__ == "__main__":
         )
     elif args.command == 'close':
         resp = requests.delete(
-            url=f'http://localhost:5000/game/{args.token}',
+            url=f'http://localhost:5002/game/{args.token}',
             timeout=30,
         )
     elif args.command == 'msg':
         resp = requests.put(
-            url=f'http://localhost:5000/game/{args.token}/msg',
+            url=f'http://localhost:5002/game/{args.token}/msg',
             json={
                 'msg': args.msg
             },
