@@ -335,7 +335,12 @@ async def create_multiserver(port, multidatafile, racemode=False):
         try:
             with open(ctx.save_filename, 'rb') as f:
                 jsonobj = json.loads(zlib.decompress(f.read()).decode("utf-8"))
-                ctx.set_save(jsonobj)
+                rom_names = jsonobj[0]
+                received_items = {tuple(k): [MultiServer.ReceivedItem(**i) for i in v] for k, v in jsonobj[1]}
+                if not all([ctx.rom_names[tuple(rom)] == (team, slot) for rom, (team, slot) in rom_names]):
+                    raise Exception('Save file mismatch, will start a new game')
+                ctx.received_items = received_items
+                logging.info('Loaded save file with %d received items for %d players' % (sum([len(p) for p in received_items.values()]), len(received_items)))
         except FileNotFoundError:
             logging.error('No save data found, starting a new game')
         except Exception as e:
