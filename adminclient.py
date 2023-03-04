@@ -16,7 +16,7 @@ if __name__ == "__main__":
     parser_close = subparsers.add_parser('close')
     parser_close.add_argument("token")
 
-    parser_msg = subparsers.add_parser('msg')f
+    parser_msg = subparsers.add_parser('msg')
     parser_msg.add_argument("token")
     parser_msg.add_argument("msg")
 
