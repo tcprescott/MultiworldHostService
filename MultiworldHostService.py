@@ -238,7 +238,7 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
                     MultiServer.forfeit_player(ctx, client.team, client.slot)
                     return f"Forfeited player {command[1]} from team {team + 1}."
     if command[0] == '/senditem' and len(command) > 2:
-        [(player, item)] = re.findall(r'\S* (\S*) (.*)', input)
+        [(player, item)] = re.findall(r'\S* (\S*) (.*)', raw_input)
         if item in MultiServer.Items.item_table:
             for client in ctx.clients:
                 if client.auth and client.name.lower() == player.lower():
