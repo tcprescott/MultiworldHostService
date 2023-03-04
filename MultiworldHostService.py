@@ -77,12 +77,11 @@ async def update_game_message(token):
         close_game(data['token'])
         return jsonify(resp='Game closed.', success=True)
 
-    resp = server_command_processor(MULTIWORLDS[token]['server'])
-
-    if resp:
-        return jsonify(resp="Message sent and ran successfully.", success=True)
-    else:
-        return jsonify(error="Command failed.", success=False)
+    try:
+        resp = await server_command_processor(MULTIWORLDS[token]['server'], data['msg'])
+        return jsonify(resp=resp, success=True)
+    except Exception as e:
+        return jsonify(resp=str(e), success=False)
 
 
 @APP.route('/game/<string:token>/<string:param>', methods=['PUT'])
@@ -200,8 +199,8 @@ async def load_worlds():
         print(f"Restoring {token}")
         await init_multiserver(saved_worlds[token])
 
-async def server_command_processor(ctx: MultiServer.Context):
-    command = shlex.split(input)
+async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
+    command = shlex.split(raw_input)
     if not command:
         return
 
@@ -217,8 +216,9 @@ async def server_command_processor(ctx: MultiServer.Context):
             if client.auth and client.name.lower() == command[1].lower() and (team is None or team == client.team):
                 if client.socket and not client.socket.closed:
                     await client.socket.close()
+                    return f"Kicked player '{command[1]}'."
 
-        return f"Attempted to kick player {command[1]} from team {team + 1}."
+        return f"Player '{command[1]}' not found."
 
     if command[0] == '/forfeitslot' and len(command) > 1 and command[1].isdigit():
         if len(command) > 2 and command[2].isdigit():
