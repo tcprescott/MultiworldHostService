@@ -81,6 +81,7 @@ async def update_game_message(token):
         resp = await server_command_processor(MULTIWORLDS[token]['server'], data['msg'])
         return jsonify(resp=resp, success=True)
     except Exception as e:
+        logging.exception("Exception in server_command_processor")
         return jsonify(resp=str(e), success=False)
 
 
@@ -249,6 +250,9 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
         else:
             logging.warning("Unknown item: " + item)
             return f"Unknown item: {item}"
+
+    if command[0][0] != '/':
+        MultiServer.notify_all(ctx, '[Server]: ' + raw_input)
 
 async def init_multiserver(data):
     if not 'multidata_url' in data and not 'token' in data:
