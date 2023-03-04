@@ -1,8 +1,7 @@
-#!env/bin/python
+#!.venv/bin/python
 
 import argparse
 import requests
-import json
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -37,18 +36,21 @@ if __name__ == "__main__":
             url=f'http://localhost:5000/game/{args.token}/{args.parameter}',
             json={
                 'value': value
-            }
+            },
+            timeout=30,
         )
     elif args.command == 'close':
         resp = requests.delete(
-            url=f'http://localhost:5000/game/{args.token}'
+            url=f'http://localhost:5000/game/{args.token}',
+            timeout=30,
         )
     elif args.command == 'msg':
         resp = requests.put(
             url=f'http://localhost:5000/game/{args.token}/msg',
             json={
                 'msg': args.msg
-            }
+            },
+            timeout=30,
         )
 
     print(resp.json())
