@@ -9,6 +9,7 @@ class Multiworlds(Model):
     admin = fields.BigIntField(null=True)
     race = fields.BooleanField(default=False)
     meta = fields.JSONField(null=True)
+    multidata_url = fields.CharField(max_length=2000, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    active = fields.BooleanField(default=True)
+    active = fields.BooleanField(default=False)

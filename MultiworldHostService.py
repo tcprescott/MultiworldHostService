@@ -8,20 +8,24 @@ import re
 import shlex
 import socket
 import string
-import zlib
 import urllib.parse
+import zlib
 
 import aiofiles
 import aiohttp
 import MultiServer
+import shortuuid
+import tortoise.exceptions
 import websockets
 from quart import Quart, abort, jsonify, request
-# from tortoise import Tortoise
-# import models
+from tortoise import Tortoise
 
-# import settings
+import models
+import settings
 
-MULTIWORLDS = {}
+# MULTIWORLDS = {}
+
+multiworld_servers = {}
 
 APP = Quart(__name__)
 
@@ -29,10 +33,35 @@ APP = Quart(__name__)
 async def create_game():
     data = await request.get_json()
 
-    world = await init_multiserver(data)
+    if 'token' in data:
+        token = data['token']
+        try:
+            world = await models.Multiworlds.get(token=token)
+        except tortoise.exceptions.DoesNotExist:
+            abort(404, description=f'Game with token {token} was not found.')
+
+        if token in multiworld_servers:
+            abort(400, description=f'Game with token {token} is already active.')
+
+        ctx = await resume_multiserver(world)
+    else:
+        token=shortuuid.ShortUUID().random(length=10)
+        world = await models.Multiworlds.create(
+            token=token,
+            multidata_url=data['multidata_url'],
+            admin=data['admin'],
+            meta=data.get('meta', {}),
+            race=data.get('racemode', False),
+            noexpiry=data.get('noexpiry', False),
+        )
+
+        world.token = token
+        await world.save()
+
+        ctx = await init_multiserver(world)
 
     response = APP.response_class(
-        response=json.dumps(world, default=simple_multiworld_converter),
+        response=json.dumps(get_multiworld_info(world), default=simple_multiworld_converter),
         status=200,
         mimetype='application/json'
     )
@@ -42,11 +71,12 @@ async def create_game():
 
 @APP.route('/game', methods=['GET'])
 async def get_all_games():
+    worlds = await models.Multiworlds.filter(active=True)
     response = APP.response_class(
         response=json.dumps(
             {
-                'count': len(MULTIWORLDS),
-                'games': MULTIWORLDS
+                'count': len(worlds),
+                'games': [get_multiworld_info(w) for w in worlds]
             },
             default=simple_multiworld_converter),
         status=200,
@@ -57,11 +87,10 @@ async def get_all_games():
 
 @APP.route('/game/<string:token>', methods=['GET'])
 async def get_game(token):
-    if not token in MULTIWORLDS:
-        abort(404, description=f'Game with token {token} was not found.')
+    world = await models.Multiworlds.get(token=token)
 
     response = APP.response_class(
-        response=json.dumps(MULTIWORLDS[token], default=simple_multiworld_converter),
+        response=json.dumps(get_multiworld_info(world), default=simple_multiworld_converter),
         status=200,
         mimetype='application/json'
     )
@@ -72,19 +101,24 @@ async def get_game(token):
 @APP.route('/game/<string:token>/msg', methods=['PUT'])
 async def update_game_message(token):
     data = await request.get_json()
-
-    if not token in MULTIWORLDS:
+    try:
+        world = await models.Multiworlds.get(token=token)
+    except tortoise.exceptions.DoesNotExist:
         abort(404, description=f'Game with token {token} was not found.')
+
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
 
     if not 'msg' in data:
         abort(400)
 
+    # Specifically handle /exit command, though this should be handled by server_command_processor
     if data['msg'] == '/exit':
-        close_game(data['token'])
+        await close_game(world)
         return jsonify(resp='Game closed.', success=True)
 
     try:
-        resp = await server_command_processor(MULTIWORLDS[token]['server'], data['msg'])
+        resp = await server_command_processor(multiworld_servers[token], data['msg'])
         return jsonify(resp=resp, success=True)
     except Exception as e:
         logging.exception("Exception in server_command_processor")
@@ -95,38 +129,56 @@ async def update_game_message(token):
 async def update_game_parameter(token, param):
     data = await request.get_json()
 
-    if not token in MULTIWORLDS:
+    try:
+        world = await models.Multiworlds.get(token=token)
+    except tortoise.exceptions.DoesNotExist:
         abort(404, description=f'Game with token {token} was not found.')
+
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.  Please restart the game to update this parameter.')
 
     if not 'value' in data:
         abort(400)
 
-    if param in ['noexpiry', 'admin', 'meta', 'racemode']:
-        MULTIWORLDS[token][param] = data['value']
-        await save_worlds()
-        return jsonify(success=True)
-    else:
-        abort(400)
+    if param == 'noexpiry':
+        world.noexpiry = data['value']
+    elif param == 'admin':
+        world.admin = data['value']
+    elif param == 'meta':
+        world.admin = data['value']
+    elif param == 'racemode':
+        world.race = data['value']
 
-
-@APP.route('/game/<string:token>', methods=['DELETE'])
-async def delete_game(token):
-    if not token in MULTIWORLDS:
-        abort(404, description=f'Game with token {token} was not found.')
-
-    close_game(token)
-
-    await save_worlds()
+    await world.save()
 
     return jsonify(success=True)
 
 
-@APP.route('/game/<string:token>/<int:slot>/<int:team>', methods=['DELETE'])
-async def kick_player(token, slot, team):
-    if not token in MULTIWORLDS:
+@APP.route('/game/<string:token>', methods=['DELETE'])
+async def delete_game(token):
+    try:
+        world = await models.Multiworlds.get(token=token)
+    except tortoise.exceptions.DoesNotExist:
         abort(404, description=f'Game with token {token} was not found.')
 
-    for client in MULTIWORLDS[token]['server'].endpoints:
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
+
+    await close_game(world)
+    return jsonify(success=True)
+
+
+@APP.route('/game/<string:token>/<int:slot>/<int:team>', methods=['DELETE'])
+async def kick_player(token, slot, team=0):
+    try:
+        world = await models.Multiworlds.get(token=token)
+    except tortoise.exceptions.DoesNotExist:
+        abort(404, description=f'Game with token {token} was not found.')
+
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
+
+    for client in multiworld_servers[token].endpoints:
         if client.auth and client.team == team and client.slot == slot and not client.socket.closed:
             await client.socket.close()
 
@@ -135,16 +187,14 @@ async def kick_player(token, slot, team):
 
 @APP.route('/jobs/cleanup/<int:minutes>', methods=['POST'])
 async def cleanup(minutes):
-    tokens_to_clean = []
-    for token in MULTIWORLDS:
-        if MULTIWORLDS[token]['date'] < datetime.datetime.now()-datetime.timedelta(minutes=minutes) and not MULTIWORLDS[token].get('noexpiry', False):
-            tokens_to_clean.append(token)
-    for token in tokens_to_clean:
-        close_game(token)
+    worlds_cleaned = []
+    worlds = await models.Multiworlds.filter(active=True)
+    for world in worlds:
+        if world.updated_at < datetime.datetime.now()-datetime.timedelta(minutes=minutes) and not world.noexpiry:
+            worlds_cleaned.append(world.token)
+            await close_game(world)
 
-    await save_worlds()
-
-    return jsonify(success=True, count=len(tokens_to_clean), cleaned_tokens=tokens_to_clean)
+    return jsonify(success=True, count=len(worlds_cleaned), cleaned_worlds=worlds_cleaned)
 
 
 @APP.errorhandler(400)
@@ -161,11 +211,79 @@ def game_not_found(e):
 def something_bad_happened(e):
     return jsonify(success=False, name=e.name, description=e.description, status_code=e.code)
 
+def get_multiworld_info(world: models.Multiworlds):
+    return {
+        'id': world.id,
+        'token': world.token,
+        'port': get_server_port(world.token),
+        'noexpiry': world.noexpiry,
+        'admin': world.admin,
+        'meta': world.meta,
+        'created_at': world.created_at,
+        'updated_at': world.updated_at,
+        'active': world.active,
+        'open': get_open_status(world.token),
+        'players': get_player_list(world.token),
+        'connected_clients': get_connected_clients(world.token),
+    }
 
-def close_game(token):
-    server = MULTIWORLDS[token]['server']
-    server.server.ws_server.close()
-    del MULTIWORLDS[token]
+def get_open_status(token):
+    if token in multiworld_servers:
+        return True
+
+    return False
+
+def get_player_list(token):
+    try:
+        ctx = multiworld_servers[token]
+    except KeyError:
+        return None
+
+    teams = [team for (team, slot), name in ctx.player_names.items()]
+    teams = list(set(teams))
+
+    return [
+        [name for (team, slot), name in ctx.player_names.items() if team == t] for t in teams
+    ]
+
+def get_connected_clients(token):
+    try:
+        ctx: MultiServer.Context = multiworld_servers[token]
+    except KeyError:
+        return None
+
+    auth_clients = [c for c in ctx.clients if c.auth]
+    auth_clients.sort(key=lambda c: (c.team, c.slot))
+
+    return [
+        {
+            'team': c.team,
+            'slot': c.slot,
+            'name': c.name,
+            'send_index': c.send_index,
+            'auth': c.auth,
+        } for c in auth_clients
+    ]
+
+def get_server_port(token):
+    try:
+        ctx = multiworld_servers[token]
+    except KeyError:
+        return None
+
+    try:
+        _, port = ctx.server.ws_server.sockets[0].getsockname()
+    except IndexError:
+        return None
+
+    return port
+
+async def close_game(world: models.Multiworlds):
+    world.active = False
+    await world.save()
+    ctx: MultiServer.Context = multiworld_servers[world.token]
+    ctx.server.ws_server.close()
+    del multiworld_servers[world.token]
 
 
 def is_port_in_use(port):
@@ -187,24 +305,31 @@ def simple_multiworld_converter(o):
         return o.__str__()
 
 
-async def save_worlds():
-    async with aiofiles.open('data/saved_worlds.json', 'w') as save:
-        await save.write(json.dumps(MULTIWORLDS, default=simple_multiworld_converter))
-        await save.flush()
+# async def save_worlds():
+#     async with aiofiles.open('data/saved_worlds.json', 'w') as save:
+#         await save.write(json.dumps(MULTIWORLDS, default=simple_multiworld_converter))
+#         await save.flush()
 
 
 @APP.before_serving
 async def load_worlds():
-    try:
-        async with aiofiles.open('data/saved_worlds.json', 'r') as save:
-            saved_worlds = json.loads(await save.read())
-    except FileNotFoundError:
-        saved_worlds = []
-        print('saved_worlds.json not found, continuing...')
+    # try:
+    #     async with aiofiles.open('data/saved_worlds.json', 'r') as save:
+    #         saved_worlds = json.loads(await save.read())
+    # except FileNotFoundError:
+    #     saved_worlds = []
+    #     print('saved_worlds.json not found, continuing...')
 
-    for token in saved_worlds:
-        print(f"Restoring {token}")
-        await init_multiserver(saved_worlds[token])
+    worlds = await models.Multiworlds.filter(active=True)
+
+    for world in worlds:
+        print(f"Restoring {world.token}")
+        try:
+            await resume_multiserver(world)
+        except FileNotFoundError:
+            print(f"Failed to restore {world.token}, marking this server is inactive and continuing...")
+            world.active = False
+            await world.save()
 
 async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
     command = shlex.split(raw_input)
@@ -260,64 +385,76 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
     if command[0][0] != '/':
         MultiServer.notify_all(ctx, '[Server]: ' + raw_input)
 
-async def init_multiserver(data):
-    if not 'multidata_url' in data and not 'token' in data:
-        raise Exception('Missing multidata_url or token in data')
 
-    port = int(data.get('port', random.randint(30000, 35000)))
+async def init_multiserver(world: models.Multiworlds):
+    port = get_valid_multiworld_port()
 
-    if port < 30000 or port > 35000:
-        raise Exception(f'Port {port} is out of bounds.')
-    if is_port_in_use(port):
-        raise Exception(f'Port {port} is in use!')
+    token = world.token
 
-    if 'token' in data:
-        token = data['token']
-        if token in MULTIWORLDS:
-            raise Exception(f'Game with token {token} already exists.')
+    async with aiohttp.request(method='get', url=world.multidata_url, headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
+        binary = await resp.read()
 
-        async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
-            binary = await multidata_file.read()
-    else:
-        token = random_string(6)
+    async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
+        await multidata_file.write(binary)
 
-        async with aiohttp.request(method='get', url=data['multidata_url'], headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
-            binary = await resp.read()
+    # crude check that it's a valid multidata file
+    json.loads(zlib.decompress(binary).decode("utf-8"))
 
-        async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
-            await multidata_file.write(binary)
-
-    if 'date' in data:
-        server_date = datetime.datetime.fromisoformat(data['date'])
-    else:
-        server_date = datetime.datetime.now()
-
-    multidata = json.loads(zlib.decompress(binary).decode("utf-8"))
-
-    ctx = await create_multiserver(
+    ctx = await open_multiserver(
         port,
         f"data/{token}_multidata",
-        racemode=data.get('racemode', False)
+        racemode=world.race
     )
 
-    MULTIWORLDS[token] = {
-        'token': token,
-        'server': ctx,
-        'port': port,
-        'noexpiry': data.get('noexpiry', False),
-        'admin': data.get('admin', None),
-        'date': server_date,
-        'meta': data.get('meta', None),
-        'players': multidata['names'],
-        'server_options': multidata.get('server_options', None),
-    }
+    multiworld_servers[token] = ctx
 
-    await save_worlds()
+    world.active = True
+    world.port = port
+    await world.save()
 
-    return MULTIWORLDS[token]
+    return ctx
 
+async def resume_multiserver(world: models.Multiworlds):
+    port = get_valid_multiworld_port(world.port)
 
-async def create_multiserver(port, multidatafile, racemode=False):
+    token = world.token
+    if token in multiworld_servers:
+        raise Exception(f'Game with token {token} already exists.')
+
+    async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
+        binary = await multidata_file.read()
+
+    # crude check that it's a valid multidata file
+    json.loads(zlib.decompress(binary).decode("utf-8"))
+
+    ctx = await open_multiserver(
+        port,
+        f"data/{token}_multidata",
+        racemode=world.race
+    )
+
+    multiworld_servers[token] = ctx
+
+    world.active = True
+    world.port = port
+    await world.save()
+
+    return ctx
+
+def get_valid_multiworld_port(port=None):
+    if port is None:
+        port = random.randint(30000, 35000)
+
+    attempts = 0
+    while is_port_in_use(port):
+        port = random.randint(30000, 35000)
+        attempts += 1
+        if attempts > 20:
+            raise Exception("Could not find open port for multiserver.")
+
+    return port
+
+async def open_multiserver(port: int, multidatafile: str, racemode: bool=False):
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, "INFO", logging.INFO))
 
     ctx = MultiServer.Context('0.0.0.0', port, None)
@@ -360,15 +497,15 @@ async def create_multiserver(port, multidatafile, racemode=False):
     await ctx.server
     return ctx
 
-# async def database():
-#     await Tortoise.init(
-#         db_url=f'mysql://{settings.DB_USER}:{urllib.parse.quote_plus(settings.DB_PASS)}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}',
-#         modules={'models': ['models']}
-#     )
+async def database():
+    await Tortoise.init(
+        db_url=f'mysql://{settings.DB_USER}:{urllib.parse.quote_plus(settings.DB_PASS)}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}',
+        modules={'models': ['models']}
+    )
 
 if __name__ == '__main__':
-    # loop = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
 
-    # dbtask = loop.create_task(database())
-    # loop.run_until_complete(dbtask)
+    dbtask = loop.create_task(database())
+    loop.run_until_complete(dbtask)
     APP.run(host='127.0.0.1', port=5002, use_reloader=False)
