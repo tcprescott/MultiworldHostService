@@ -1,3 +1,7 @@
+###########
+# MultiworldHostService for ALttP Door Randomizer
+# by Synack
+###########
 import asyncio
 import datetime
 import functools
@@ -7,7 +11,6 @@ import random
 import re
 import shlex
 import socket
-import string
 import urllib.parse
 import zlib
 
@@ -22,8 +25,6 @@ from tortoise import Tortoise
 
 import models
 import settings
-
-# MULTIWORLDS = {}
 
 multiworld_servers = {}
 
@@ -43,7 +44,7 @@ async def create_game():
         if token in multiworld_servers:
             abort(400, description=f'Game with token {token} is already active.')
 
-        ctx = await resume_multiserver(world)
+        ctx = await init_multiserver(world, resume=True)
     else:
         token=shortuuid.ShortUUID().random(length=10)
         world = await models.Multiworlds.create(
@@ -53,6 +54,7 @@ async def create_game():
             meta=data.get('meta', {}),
             race=data.get('racemode', False),
             noexpiry=data.get('noexpiry', False),
+            password=data.get('password', None),
         )
 
         world.token = token
@@ -118,7 +120,7 @@ async def update_game_message(token):
         return jsonify(resp='Game closed.', success=True)
 
     try:
-        resp = await server_command_processor(multiworld_servers[token], data['msg'])
+        resp = await server_command_processor(multiworld_servers[token], data['msg'], world)
         return jsonify(resp=resp, success=True)
     except Exception as e:
         logging.exception("Exception in server_command_processor")
@@ -219,11 +221,11 @@ async def kick_player(token, slot, team):
                     MultiServer.notify_all(ctx, 'Cheat console: sending "' + item + '" to ' + client.name)
             MultiServer.send_new_items(ctx)
             return jsonify(resp=f"Sent {item} to {player}.", success=True)
-        else:
-            logging.warning("Unknown item: " + item)
-            return f"Unknown item: {item}"
 
-    elif cmd == 'forfeitplayer':
+        logging.warning("Unknown item: " + item)
+        return jsonify(resp=f"Unknown item: {item}", success=False)
+
+    elif cmd == 'forfeit':
         team = data.get('team', None)
         name = data.get('name', None)
         if name is None:
@@ -233,6 +235,23 @@ async def kick_player(token, slot, team):
                 if client.socket and not client.socket.closed:
                     MultiServer.forfeit_player(ctx, client.team, client.slot)
                     return jsonify(resp=f"Forfeited player '{name}'.", success=True)
+
+        return jsonify(resp=f"Player '{name}' not found.", success=False)
+
+    elif cmd == 'close':
+        await close_game(world)
+        return jsonify(resp='Game closed.', success=True)
+
+    elif cmd == 'password':
+        password = data.get('password', None)
+        MultiServer.set_password(ctx, password)
+        world.password = password
+        await world.save()
+
+        if password:
+            return jsonify(resp='Password set.', success=True)
+
+        return jsonify(resp='Password removed.', success=True)
 
     return jsonify(resp=f"Invalid command {cmd}", success=False)
 
@@ -342,48 +361,25 @@ def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('0.0.0.0', port)) == 0
 
-
-def random_string(length=6):
-    chars = string.ascii_lowercase + string.digits
-    return ''.join(random.choice(chars) for i in range(length))
-
-
 def simple_multiworld_converter(o):
-    if isinstance(o, MultiServer.Client):
-        return None
-    if isinstance(o, MultiServer.Context):
-        return None
     if isinstance(o, datetime.datetime):
         return o.__str__()
 
-
-# async def save_worlds():
-#     async with aiofiles.open('data/saved_worlds.json', 'w') as save:
-#         await save.write(json.dumps(MULTIWORLDS, default=simple_multiworld_converter))
-#         await save.flush()
-
-
 @APP.before_serving
 async def load_worlds():
-    # try:
-    #     async with aiofiles.open('data/saved_worlds.json', 'r') as save:
-    #         saved_worlds = json.loads(await save.read())
-    # except FileNotFoundError:
-    #     saved_worlds = []
-    #     print('saved_worlds.json not found, continuing...')
-
     worlds = await models.Multiworlds.filter(active=True)
 
     for world in worlds:
         print(f"Restoring {world.token}")
         try:
-            await resume_multiserver(world)
+            await init_multiserver(world, resume=True)
         except FileNotFoundError:
             print(f"Failed to restore {world.token}, marking this server is inactive and continuing...")
             world.active = False
             await world.save()
 
-async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
+# Hopefully we can just retire this in the future
+async def server_command_processor(ctx: MultiServer.Context, raw_input: str, world: models.Multiworlds):
     command = shlex.split(raw_input)
     if not command:
         return
@@ -393,6 +389,8 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
         return "Players: " + MultiServer.get_connected_players_string(ctx)
     if command[0] == '/password':
         MultiServer.set_password(ctx, command[1] if len(command) > 1 else None)
+        world.password = command[1] if len(command) > 1 else None
+        await world.save()
         return "Password set."
     if command[0] == '/kick' and len(command) > 1:
         team = int(command[2]) - 1 if len(command) > 2 and command[2].isdigit() else None
@@ -438,43 +436,23 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
         MultiServer.notify_all(ctx, '[Server]: ' + raw_input)
 
 
-async def init_multiserver(world: models.Multiworlds):
-    port = get_valid_multiworld_port()
-
-    token = world.token
-
-    async with aiohttp.request(method='get', url=world.multidata_url, headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
-        binary = await resp.read()
-
-    async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
-        await multidata_file.write(binary)
-
-    # crude check that it's a valid multidata file
-    json.loads(zlib.decompress(binary).decode("utf-8"))
-
-    ctx = await open_multiserver(
-        port,
-        f"data/{token}_multidata",
-        racemode=world.race
-    )
-
-    multiworld_servers[token] = ctx
-
-    world.active = True
-    world.port = port
-    await world.save()
-
-    return ctx
-
-async def resume_multiserver(world: models.Multiworlds):
+async def init_multiserver(world: models.Multiworlds, resume=False):
     port = get_valid_multiworld_port(world.port)
 
     token = world.token
-    if token in multiworld_servers:
-        raise Exception(f'Game with token {token} already exists.')
 
-    async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
-        binary = await multidata_file.read()
+    if resume:
+        if token in multiworld_servers:
+            raise Exception(f'Game with token {token} is already open.')
+
+        async with aiofiles.open(f"data/{token}_multidata", "rb") as multidata_file:
+            binary = await multidata_file.read()
+    else:
+        async with aiohttp.request(method='get', url=world.multidata_url, headers={'User-Agent': 'SahasrahBot Multiworld Service'}) as resp:
+            binary = await resp.read()
+
+        async with aiofiles.open(f"data/{token}_multidata", "wb") as multidata_file:
+            await multidata_file.write(binary)
 
     # crude check that it's a valid multidata file
     json.loads(zlib.decompress(binary).decode("utf-8"))
@@ -482,7 +460,8 @@ async def resume_multiserver(world: models.Multiworlds):
     ctx = await open_multiserver(
         port,
         f"data/{token}_multidata",
-        racemode=world.race
+        racemode=world.race,
+        password=world.password
     )
 
     multiworld_servers[token] = ctx
@@ -506,10 +485,10 @@ def get_valid_multiworld_port(port=None):
 
     return port
 
-async def open_multiserver(port: int, multidatafile: str, racemode: bool=False):
+async def open_multiserver(port: int, multidatafile: str, racemode: bool=False, password: str=None):
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, "INFO", logging.INFO))
 
-    ctx = MultiServer.Context('0.0.0.0', port, None)
+    ctx = MultiServer.Context('0.0.0.0', port, password)
     MultiServer.init_lookups(ctx)
     ctx.data_filename = multidatafile
     ctx.disable_client_forfeit = racemode

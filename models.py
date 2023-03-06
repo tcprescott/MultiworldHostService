@@ -13,3 +13,4 @@ class Multiworlds(Model):
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     active = fields.BooleanField(default=False)
+    password = fields.CharField(max_length=255, null=True)
