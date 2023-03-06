@@ -16,10 +16,10 @@ import aiohttp
 import MultiServer
 import websockets
 from quart import Quart, abort, jsonify, request
-from tortoise import Tortoise
-import models
+# from tortoise import Tortoise
+# import models
 
-import settings
+# import settings
 
 MULTIWORLDS = {}
 
