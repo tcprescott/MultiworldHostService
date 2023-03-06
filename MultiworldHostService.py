@@ -168,8 +168,14 @@ async def delete_game(token):
     return jsonify(success=True)
 
 
-@APP.route('/game/<string:token>/<int:slot>/<int:team>', methods=['DELETE'])
-async def kick_player(token, slot, team=0):
+@APP.route('/game/<string:token>/cmd', methods=['POST'])
+async def kick_player(token, slot, team):
+    data = await request.get_json()
+
+    cmd = data.get('command', None)
+    if cmd is None:
+        abort(400, description='No command specified.')
+
     try:
         world = await models.Multiworlds.get(token=token)
     except tortoise.exceptions.DoesNotExist:
@@ -178,11 +184,57 @@ async def kick_player(token, slot, team=0):
     if token not in multiworld_servers:
         abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
 
-    for client in multiworld_servers[token].endpoints:
-        if client.auth and client.team == team and client.slot == slot and not client.socket.closed:
-            await client.socket.close()
 
-    return jsonify(success=True)
+    ctx = multiworld_servers[token]
+
+    if cmd == 'kick':
+        team = data.get('team', None)
+        name = data.get('name', None)
+
+        if name is None:
+            return jsonify(resp="No player specified.", success=False)
+
+        for client in ctx.clients:
+            if client.auth and client.name.lower() == name.lower() and (team is None or team == client.team):
+                if client.socket and not client.socket.closed:
+                    await client.socket.close()
+                    return jsonify(resp=f"Kicked player '{name}'.", success=True)
+
+        return jsonify(resp=f"Player '{name}' not found.", success=False)
+
+    elif cmd == 'senditem':
+        player = data.get('player', None)
+        item = data.get('item', None)
+
+        if player is None:
+            return jsonify(resp="No player specified.", success=False)
+        if item is None:
+            return jsonify(resp="No item specified.", success=False)
+
+        if item in MultiServer.Items.item_table:
+            for client in ctx.clients:
+                if client.auth and client.name.lower() == player.lower():
+                    new_item = MultiServer.ReceivedItem(MultiServer.Items.item_table[item][3], "cheat console", client.slot)
+                    MultiServer.get_received_items(ctx, client.team, client.slot).append(new_item)
+                    MultiServer.notify_all(ctx, 'Cheat console: sending "' + item + '" to ' + client.name)
+            MultiServer.send_new_items(ctx)
+            return jsonify(resp=f"Sent {item} to {player}.", success=True)
+        else:
+            logging.warning("Unknown item: " + item)
+            return f"Unknown item: {item}"
+
+    elif cmd == 'forfeitplayer':
+        team = data.get('team', None)
+        name = data.get('name', None)
+        if name is None:
+            return jsonify(resp="No name specified.", success=False)
+        for client in ctx.clients:
+            if client.auth and client.name.lower() == name and (team is None or team == client.team):
+                if client.socket and not client.socket.closed:
+                    MultiServer.forfeit_player(ctx, client.team, client.slot)
+                    return jsonify(resp=f"Forfeited player '{name}'.", success=True)
+
+    return jsonify(resp=f"Invalid command {cmd}", success=False)
 
 
 @APP.route('/jobs/cleanup/<int:minutes>', methods=['POST'])
