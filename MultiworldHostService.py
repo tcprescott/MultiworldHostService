@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import functools
 import json
@@ -8,12 +9,17 @@ import shlex
 import socket
 import string
 import zlib
+import urllib.parse
 
 import aiofiles
 import aiohttp
 import MultiServer
 import websockets
 from quart import Quart, abort, jsonify, request
+from tortoise import Tortoise
+import models
+
+import settings
 
 MULTIWORLDS = {}
 
@@ -256,7 +262,7 @@ async def server_command_processor(ctx: MultiServer.Context, raw_input: str):
 
 async def init_multiserver(data):
     if not 'multidata_url' in data and not 'token' in data:
-        raise Exception(f'Missing multidata_url or token in data')
+        raise Exception('Missing multidata_url or token in data')
 
     port = int(data.get('port', random.randint(30000, 35000)))
 
@@ -354,5 +360,15 @@ async def create_multiserver(port, multidatafile, racemode=False):
     await ctx.server
     return ctx
 
+# async def database():
+#     await Tortoise.init(
+#         db_url=f'mysql://{settings.DB_USER}:{urllib.parse.quote_plus(settings.DB_PASS)}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}',
+#         modules={'models': ['models']}
+#     )
+
 if __name__ == '__main__':
+    # loop = asyncio.get_event_loop()
+
+    # dbtask = loop.create_task(database())
+    # loop.run_until_complete(dbtask)
     APP.run(host='127.0.0.1', port=5002, use_reloader=False)
