@@ -458,6 +458,7 @@ async def open_multiserver(port: int, multidatafile: str, racemode: bool=False):
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=getattr(logging, "INFO", logging.INFO))
 
     ctx = MultiServer.Context('0.0.0.0', port, None)
+    MultiServer.init_lookups(ctx)
     ctx.data_filename = multidatafile
     ctx.disable_client_forfeit = racemode
 
