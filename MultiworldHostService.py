@@ -13,6 +13,7 @@ import shlex
 import socket
 import urllib.parse
 import zlib
+import pytz
 
 import aiofiles
 import aiohttp
@@ -259,9 +260,10 @@ async def kick_player(token, slot, team):
 @APP.route('/jobs/cleanup/<int:minutes>', methods=['POST'])
 async def cleanup(minutes):
     worlds_cleaned = []
+    now = datetime.datetime.now(datetime.timezone.utc)
     worlds = await models.Multiworlds.filter(active=True)
     for world in worlds:
-        if world.updated_at < datetime.datetime.now()-datetime.timedelta(minutes=minutes) and not world.noexpiry:
+        if world.updated_at < now-datetime.timedelta(minutes=minutes) and not world.noexpiry:
             worlds_cleaned.append(world.token)
             await close_game(world)
 
