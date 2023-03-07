@@ -13,10 +13,10 @@ import shlex
 import socket
 import urllib.parse
 import zlib
-import pytz
 
 import aiofiles
 import aiohttp
+import Items
 import MultiServer
 import shortuuid
 import tortoise.exceptions
@@ -256,6 +256,56 @@ async def kick_player(token, slot, team):
 
     return jsonify(resp=f"Invalid command {cmd}", success=False)
 
+
+# These routes are for autocomplete in the frontend app (SahasrahBot)
+@APP.route('/autocomplete/clients', methods=['GET'])
+async def autocomplete_client():
+    args = request.args
+    token = args.get('token')
+    client = args.get('client', '')
+
+    if token is None:
+        abort(400, description='No token specified.')
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
+
+    ctx = multiworld_servers[token]
+
+    clients = [c.name for c in ctx.clients if c.auth and c.name.startswith(client)][:25]
+    clients.sort()
+
+    return jsonify(clients)
+
+@APP.route('/autocomplete/players', methods=['GET'])
+async def autocomplete_player():
+    args = request.args
+    token = args.get('token')
+    player = args.get('player', '')
+
+    if token is None:
+        abort(400, description='No token specified.')
+    if token not in multiworld_servers:
+        abort(404, description=f'Game with token {token} is not currently active, but has previously existed.')
+
+    ctx = multiworld_servers[token]
+
+    players = [name for name in ctx.player_names.values() if name.startswith(player)][:25]
+    players.sort()
+
+    return jsonify(players)
+
+@APP.route('/autocomplete/items', methods=['GET'])
+async def autocomplete_item():
+    args = request.args
+    item = args.get('item', '')
+
+    items = [
+        i for i, p in Items.item_table.items() if p[2] in [
+            None, 'Sword', 'SmallKey', 'BigKey', 'Compass', 'Map'
+        ] and i.startswith(item)
+    ][:25]
+    items.sort()
+    return jsonify(items)
 
 @APP.route('/jobs/cleanup/<int:minutes>', methods=['POST'])
 async def cleanup(minutes):
