@@ -171,8 +171,8 @@ async def delete_game(token):
     return jsonify(success=True)
 
 
-@APP.route('/game/<string:token>/cmd', methods=['POST'])
-async def kick_player(token, slot, team):
+@APP.route('/game/<string:token>/cmd', methods=['PUT'])
+async def cmd(token):
     data = await request.get_json()
 
     cmd = data.get('command', None)
@@ -263,7 +263,6 @@ async def autocomplete_client():
     args = request.args
     token = args.get('token')
     client = args.get('client', '')
-
     if token is None:
         abort(400, description='No token specified.')
     if token not in multiworld_servers:
