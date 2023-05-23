@@ -16,7 +16,7 @@ python-bps-continued = "^7"
 colorama = "^0.4.6"
 aioconsole = "^0.6.0"
 pyyaml = "^6.0"
-requests = "^2.28.2"
+requests = "^2.31.0"
 aerich = "^0.7.1"
 tortoise-orm = {extras = ["asyncmy"], version = "^0.19.3"}
 shortuuid = "^1.0.11"
